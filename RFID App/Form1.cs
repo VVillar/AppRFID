@@ -13,7 +13,7 @@ using Impinj.OctaneSdk;
 using System.Threading;
 using Flurl.Http;
 using System.Net;
-
+using System.Text.RegularExpressions;
 
 namespace RFID_App
 {
@@ -28,7 +28,12 @@ namespace RFID_App
         static ImpinjReader reader = new ImpinjReader();
         const ushort EPC_OP_ID = 123;
         const ushort PC_BITS_OP_ID = 321;
-       
+        static bool _stopLoop = true;
+        static string idEvento;
+        static string idDestino;
+
+
+
 
         public Form1()
         {
@@ -38,8 +43,10 @@ namespace RFID_App
             //Conectamos el RFID ME
             myReader.Connect("RFIDME");
             this.cbDispositivo.DropDownStyle = ComboBoxStyle.DropDownList;
-            this.cbBotonesLeerGrabar.DropDownStyle = ComboBoxStyle.DropDownList;
             this.KeyPreview = true;
+            this.lboxLog.SelectionMode = SelectionMode.None;
+
+
             try
             {
                 //Conectamos el Speedway
@@ -47,7 +54,7 @@ namespace RFID_App
                 //Se aplican los valores por defecto al speedway
                 reader.ApplyDefaultSettings();
                 //Se inicia el speedway
-                reader.Start();
+                //reader.Start();
                 //Instanciamos settings y le asignamos los settings actuales
                 Settings settings = reader.QuerySettings();
                 //Se agrega el número de puerto de antena al reporte
@@ -140,7 +147,7 @@ namespace RFID_App
 
         }
 
-        
+
         public void OnTagsReported2(ImpinjReader sender, TagReport report)
         {
             // This event handler is called asynchronously 
@@ -169,25 +176,45 @@ namespace RFID_App
         private void b2IniciarLectura_Click(object sender, EventArgs e)
         {
             b2IniciarLectura.FlatStyle = FlatStyle.Flat;
-            tbCodEPC.Text = "";
             tbCodEPC.Text = myReader.ReadEPC(false, ",");
-            tbNuevoEPC.Text = "";
             tbNuevoEPC.Text = tbCodEPC.Text;
             b2IniciarLectura.FlatStyle = FlatStyle.Standard;
+            if (cbIncremento.Checked)
+            {
+                tbNuevoEPC.Text = (Int64.Parse(tbCodEPC.Text) + Int64.Parse(nudEPC.Value.ToString())).ToString().PadLeft(24, '0');
+            }
         }
 
         //Checkbox incremento para mostrar o esconder 
         private void checkBox1_CheckedChanged(object sender, EventArgs e)
         {
-            if (cbIncremento.Checked == true)
+
+            try
             {
-                //tbNuevoEPC.Text = tbCodEPC.Text;
-                nudEPC.Visible = true;
+                if (cbIncremento.Checked == true)
+                {
+                    tbNuevoEPC.Text = (Int64.Parse(tbCodEPC.Text) + Int64.Parse(nudEPC.Value.ToString())).ToString().PadLeft(24, '0');
+                    nudEPC.Visible = true;
+                }
+                else
+                {
+                    tbNuevoEPC.Text = tbCodEPC.Text;
+                    nudEPC.Visible = false;
+                }
             }
-            else
+            catch
             {
-                //tbNuevoEPC.Text = tbCodEPC.Text;
-                nudEPC.Visible = false;
+                if (cbIncremento.Checked == true)
+                {
+                    tbNuevoEPC.Text = "0";
+                    nudEPC.Visible = true;
+                }
+                else
+                {
+                    tbNuevoEPC.Text = tbCodEPC.Text;
+                    nudEPC.Visible = false;
+                }
+
             }
         }
         // Cuando cambia un valor del Numeric Up Down
@@ -229,9 +256,11 @@ namespace RFID_App
                     else
                     {
                         Int64 sigEPC = Int64.Parse(tbNuevoEPC.Text) + Int64.Parse(nudEPC.Value.ToString());
-                        myReader.writeEPC(tbCodEPC.Text, "00000000", tbNuevoEPC.Text.PadLeft(24, '0'));
-                        tbNuevoEPC.Text = sigEPC.ToString().PadLeft(24, '0');
+                        myReader.writeEPC(myReader.ReadEPC(false, ","), "00000000", tbNuevoEPC.Text.PadLeft(24, '0'));
                         MessageBox.Show("EPC guardado");
+                        tbNuevoEPC.Text = sigEPC.ToString().PadLeft(24, '0');
+                        tbCodEPC.Text = myReader.ReadEPC(false, ",");
+
                     }
                 }
                 else
@@ -244,6 +273,7 @@ namespace RFID_App
                     else
                     {
                         myReader.writeEPC(tbCodEPC.Text, "00000000", tbNuevoEPC.Text.PadLeft(24, '0'));
+                        tbCodEPC.Text = myReader.ReadEPC(false, ",");
                         MessageBox.Show("EPC guardado");
                     }
 
@@ -323,12 +353,12 @@ namespace RFID_App
             {
 
                 case "Iniciar Lectura Speedway":
-                    
+
                     #region Speedway
                     try
                     {
-                        
-                        // reader.Start();
+
+
                         reader.ApplyDefaultSettings();
                         Settings settings = reader.QuerySettings();
                         settings.Antennas.DisableAll();
@@ -342,6 +372,7 @@ namespace RFID_App
                         reader.ApplySettings(settings);
                         btnIniDetLectSpeedway.Text = "Detener Lectura Speedway";
                         reader.TagsReported += OnTagsReported;
+                        reader.Start();
                     }
                     catch
                     {
@@ -350,7 +381,7 @@ namespace RFID_App
                     #endregion
                     break;
                 case "Detener Lectura Speedway":
-                    reader.Stop();
+                    //reader.Stop();
                     btnIniDetLectSpeedway.Text = "Iniciar Lectura Speedway";
                     reader.TagsReported -= OnTagsReported;
                     break;
@@ -368,137 +399,31 @@ namespace RFID_App
                 ListBox.CheckForIllegalCrossThreadCalls = false;
                 lboxLog.Items.Add(tag.Epc.ToString());
             }
-            report.Tags.Clear();
         }
 
-
-
-        #region Grabar EPC Speedway
-        //Grabar EPC Speedway
-        private void button1_Click_2(object sender, EventArgs e)
+        // This event handler will be called when tag 
+        // operations have been executed by the reader.
+        static void OnTagOpComplete(ImpinjReader reader, TagOpReport report)
         {
-            btnGrabarSpeedway.FlatStyle = FlatStyle.Flat;
-            try
+            // Loop through all the completed tag operations.
+            foreach (TagOpResult result in report)
             {
-                // Assign the TagsReported event handler.
-                // This specifies which method to call
-                // when tags reports are available.
-                reader.TagsReported += OnTagsReported3;
-                // Get the default settings
-                // We'll use these as a starting point
-                // and then modify the settings we're 
-                // interested in.
-                Settings settings = reader.QuerySettings();
+                // Was this completed operation a tag write operation?
+                if (result is TagWriteOpResult)
+                {
+                    // Cast it to the correct type.
+                    TagWriteOpResult writeResult = result as TagWriteOpResult;
+                    if (writeResult.OpId == EPC_OP_ID)
+                        MessageBox.Show("Write to EPC complete : {0}" + writeResult.Result);
+                    else if (writeResult.OpId == PC_BITS_OP_ID)
+                        MessageBox.Show("Write to PC bits complete : {0}" + writeResult.Result);
 
-                // Tell the reader to include the Protocol Control 
-                // bits in all tag reports. We will need to modify 
-                // the PC bits if we change the length of the EPC. 
-                settings.Report.IncludePcBits = true;
-
-                // Enable antenna #1. Disable all others.
-                settings.Antennas.DisableAll();
-                settings.Antennas.GetAntenna(1).IsEnabled = true;
-
-                // Apply the newly modified settings.
-                reader.ApplySettings(settings);
-
+                    // Print out the number of words written
+                    MessageBox.Show("Number of words written : {0}" + writeResult.NumWordsWritten);
+                }
             }
-            catch
-            {
-                // Handle Octane SDK errors.
-                MessageBox.Show("Error con la escritura");
-            }
-            btnGrabarSpeedway.FlatStyle = FlatStyle.Standard;
-        }
-        public void OnTagsReported3(ImpinjReader sender, TagReport report)
-        {
-            // We've read the tag we want write to, so
-            // we're not interested in tag reports any more.
-            // Unsubscribe from the event.
-            reader.TagsReported -= OnTagsReported3;
-
-            // Change the EPC of the first tag we read to a random value.
-            Tag tag = report.Tags[0];
-            TextBox.CheckForIllegalCrossThreadCalls = false;
-            string nuevoEPC = tbNuevoEPC.Text;
-            ProgramEpc(tag.Epc.ToHexString(), tag.PcBits, nuevoEPC);
-            MessageBox.Show("El nuevo tag es:" + tag.Epc.ToHexString());
         }
 
-
-        static void ProgramEpc(string currentEpc, ushort currentPcBits, string newEpc)
-        {
-            try { 
-            // Check that the specified EPCs are a valid length
-            if (newEpc.Length % 4 != 0)
-            {
-                MessageBox.Show("El nuevo EPC debe ser multiplo de 4");
-                return;
-            }
-
-            // Create a tag operation sequence.
-            // You can add multiple read, write, lock, kill and QT
-            // operations to this sequence.
-            TagOpSequence seq = new TagOpSequence();
-
-            // Specify a target tag based on the EPC.
-            seq.TargetTag.MemoryBank = MemoryBank.Epc;
-            seq.TargetTag.BitPointer = BitPointers.Epc;
-            seq.TargetTag.Data = currentEpc;
-
-            // If you are using Monza 4, Monza 5 or Monza X tag chips,
-            // uncomment these two lines. This enables 32-bit block writes
-            // which significantly improves write performance.
-            //seq.BlockWriteEnabled = true;
-            //seq.BlockWriteWordCount = 2;
-
-            // Create a tag write operation to change the EPC.
-            TagWriteOp writeEpc = new TagWriteOp();
-            // Set an ID so we can tell when this operation has executed.
-            writeEpc.Id = EPC_OP_ID;
-            // Write to EPC memory
-            writeEpc.MemoryBank = MemoryBank.Epc;
-            // Specify the new EPC data
-            writeEpc.Data = TagData.FromHexString(newEpc);
-            // Starting writing at word 2 (word 0 = CRC, word 1 = PC bits)
-            writeEpc.WordPointer = WordPointers.Epc;
-
-            // Add this tag write op to the tag operation sequence.
-            seq.Ops.Add(writeEpc);
-
-            // Is the new EPC a different length than the current EPC?
-            if (currentEpc.Length != newEpc.Length)
-            {
-                // We need adjust the PC bits and write them back to the 
-                // tag because the length of the EPC has changed.
-
-                // Adjust the PC bits (4 hex characters per word).
-                ushort newEpcLenWords = (ushort)(newEpc.Length / 4);
-                ushort newPcBits = PcBits.AdjustPcBits(currentPcBits, newEpcLenWords);
-
-                TagWriteOp writePc = new TagWriteOp();
-                writePc.Id = PC_BITS_OP_ID;
-                // The PC bits are in the EPC memory bank.
-                writePc.MemoryBank = MemoryBank.Epc;
-                // Specify the data to write (the modified PC bits).
-                writePc.Data = TagData.FromWord(newPcBits);
-                // Start writing at the start of the PC bits.
-                writePc.WordPointer = WordPointers.PcBits;
-
-                // Add this tag write op to the tag operation sequence.
-                seq.Ops.Add(writePc);
-            }
-
-            // Add the tag operation sequence to the reader.
-            // The reader supports multiple sequences.
-            reader.AddOpSequence(seq);
-        }
-            catch {
-                MessageBox.Show("Error al grabar");
-                    return;
-            }
-        }
-        #endregion
 
 
         private void tbDTxPower_TextChanged(object sender, EventArgs e)
@@ -516,11 +441,14 @@ namespace RFID_App
             btnLecSpeedway.FlatStyle = FlatStyle.Flat;
             try
             {
-                reader.Start();
+                //reader.Start();
                 Settings settings = reader.QueryDefaultSettings();
                 reader.TagsReported += OnTagsReported4;
             }
-            catch { }
+            catch
+            {
+                MessageBox.Show("Speedway no encontrado");
+            }
             btnLecSpeedway.FlatStyle = FlatStyle.Standard;
         }
         public void OnTagsReported4(ImpinjReader sender, TagReport report)
@@ -532,60 +460,24 @@ namespace RFID_App
             string codEPC = tag.Epc.ToHexString();
             TextBox.CheckForIllegalCrossThreadCalls = false;
             tbCodEPC.Text = codEPC;
-            tbNuevoEPC.Text= tag.Epc.ToHexString();
+            tbNuevoEPC.Text = tag.Epc.ToHexString();
             //ProgramEpc(tag.Epc.ToString(), tag.PcBits, tbNuevoEPC.Text);
         }
         private void btnEnvWS_Click(object sender, EventArgs e)
         {
-            try
-            {
-                string url = "http://52.43.37.169:8080/eventos/rest/dongle/leer/" + tbCodEPC.Text +"/"+ tbIDEvento.Text +"/"+ tbIDDestino.Text;
-                using (WebClient wc = new WebClient())
-                {
-                    wc.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
-                    string HtmlResult = wc.UploadString(url, "");
-                    if (HtmlResult.Equals("{\"estado\":1}"))
-                    {
-                        MessageBox.Show("Leectura guardada en base de datos");
-                    }
-                    else
-                    {
-                        MessageBox.Show("Lectura no guardada en base de datos");
-                    }
-
-                }
-            }
-            catch{
-                MessageBox.Show("Error de conexión con el web service o de tipo de datos ingresados");
-            }
         }
 
-        private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (cbBotonesLeerGrabar.SelectedItem.Equals("Speedway"))
-            {
-                pBotonesRFIDME.Visible = false;
-                pBotonesSpeedway.Visible = true;
-            }
-            else if (cbBotonesLeerGrabar.SelectedItem.Equals("RFID ME"))
-            {
-                pBotonesRFIDME.Visible = true;
-                pBotonesSpeedway.Visible = false;
-            }
-        }
 
         private void Form1_Load(object sender, EventArgs e)
         {
             this.KeyPreview = true;
-
         }
 
         private void Form1_Closing(object sender, FormClosingEventArgs e)
         {
-            MessageBox.Show("Desconectando el Speedway");
             reader.Stop();
             reader.Disconnect();
-
+            MessageBox.Show("Speedway Desconectado");
         }
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
@@ -593,7 +485,8 @@ namespace RFID_App
             {
                 b2IniciarLectura.PerformClick();
             }
-            else if (keyData == (Keys.P)){
+            else if (keyData == (Keys.P))
+            {
                 btnGrabarEPC.PerformClick();
             }
             else if (keyData == (Keys.N))
@@ -604,8 +497,526 @@ namespace RFID_App
             {
                 btnLecSpeedway.PerformClick();
             }
+            else if (keyData == (Keys.Z))
+            {
+                button4.PerformClick();
+            }
+            else if (keyData == (Keys.X))
+            {
+                button2.PerformClick();
+            }
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        string Method2(string aString)
+        {
+            return aString;
+        }
+
+        //Activar lectura y grabar en base de datos
+        private void button1_Click_1(object sender, EventArgs e)
+        {
+            int cont = 0;
+            if (tbIDEvento.Text.Equals(""))
+            {
+                MessageBox.Show("Llenar el campo ID Evento");
+                return;
+            }
+
+            if (tbIDDestino.Text.Equals(""))
+            {
+                MessageBox.Show("Llenar el  campo ID Destino");
+                return;
+            }
+
+            do
+            {
+                tbAyudaCodEPC.Text = myReader.ReadEPC(false, ",");
+                if (tbAyudaCodEPC.Text != "No tags found")
+                    cont = cont + 1;
+            } while (cont != 1);
+            try
+            {
+                string url = "http://52.43.37.169:8080/eventos/rest/dongle/leer/" + tbAyudaCodEPC.Text + "/" + tbIDEvento.Text + "/" + tbIDDestino.Text;
+                lblURL.Text = url;
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
+                    string HtmlResult = wc.UploadString(url, "");
+                    if (HtmlResult.Equals("{\"estado\":1}"))
+                    {
+                        MessageBox.Show("Lectura guardada en base de datos");
+                    }
+                    else
+                    {
+                        MessageBox.Show("Lectura no guardada en base de datos");
+                    }
+                }
+                tbAyudaCodEPC.Text = "";
+            }
+            catch
+            {
+                MessageBox.Show("Error de conexión con el web service o de tipo de datos ingresados");
+            }
+        }
+        //con Timer
+        private async void button1_Click_3(object sender, EventArgs e)
+        {
+            if (tbIDEvento.Text.Equals(""))
+            {
+                MessageBox.Show("Llenar el campo ID Evento");
+                return;
+            }
+
+            if (tbIDDestino.Text.Equals(""))
+            {
+                MessageBox.Show("Llenar el  campo ID Destino");
+                return;
+            }
+            if (tbDormirLectura.Text.Equals(""))
+            {
+                MessageBox.Show("Llenar el  campo Dormir Lectura");
+                return;
+            }
+            lblTimer.Text = "Timer activado";
+            await Task.Run(() => loop());
+
+        }
+
+        private void loop()
+        {
+            switch (lblTimer.Text)
+            {
+                case "Timer activado":
+                    Button.CheckForIllegalCrossThreadCalls = false;
+                    do
+                    {
+                        tbAyudaCodEPC.Text = myReader.ReadEPC(false, ",");
+                        idEvento = tbIDEvento.Text;
+                        idDestino = tbIDDestino.Text;
+                        if (lblTimer.Text == "Timer desactivado")
+                            return;
+                        if (tbAyudaCodEPC.Text != "No tags found")
+                        {
+                            AutoClosingMessageBox.Show("EPC leido", "Mensaje", 1000);
+                        }
+                        else
+                        {
+                            AutoClosingMessageBox.Show("EPC no leido volviendo a leer", "Mensaje", 1000);
+                        }
+                        string textolbl = lblTimer.Text;
+                    } while (tbAyudaCodEPC.Text == "No tags found");
+
+                    try
+                    {
+                        string url = "http://52.43.37.169:8080/eventos/rest/dongle/leer/" + tbAyudaCodEPC.Text + "/" + idEvento + "/" + idDestino;
+                        Label.CheckForIllegalCrossThreadCalls = false;
+                        lblURL.Text = url;
+                        using (WebClient wc = new WebClient())
+                        {
+                            wc.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
+                            string HtmlResult = wc.UploadString(url, "");
+                            if (HtmlResult.Equals("{\"estado\":1}"))
+                            {
+                                AutoClosingMessageBox.Show("Lectura guardada en base de datos", "Mensaje", 1000);
+                                try
+                                {
+                                    Thread.Sleep(int.Parse(tbDormirLectura.Text) * 1000);
+                                }
+                                catch
+                                {
+                                    MessageBox.Show("Ingresar un valor valido en dormir lectura");
+                                }
+                                loop();
+                            }
+                            else
+                            {
+                                AutoClosingMessageBox.Show("Lectura  no guardada en base de datos", "Mensaje", 1000);
+                                loop();
+                            }
+                        }
+                        tbAyudaCodEPC.Text = "";
+                    }
+                    catch (Exception ex)
+                    {
+                        Button.CheckForIllegalCrossThreadCalls = false;
+                        AutoClosingMessageBox.Show("Error de conexión con el web service o de tipo de datos ingresados" + ex, "Mensaje", 2000);
+                        loop();
+                    }
+                    break;
+                case "Timer desactivado":
+                    break;
+            }
+        }
+
+        private void button1_Click_4(object sender, EventArgs e)
+        {
+            lblTimer.Text = "Timer desactivado";
+        }
+
+        #region Leer Speedway y mandar a base de datos
+        private void btnLecSpeedway_Click_1(object sender, EventArgs e)
+        {
+
+            Settings settings;
+            if (tbEventoSW.Text == "")
+            {
+                MessageBox.Show("Agregar el ID del evento");
+                return;
+            }
+            // reader.Start();
+            try
+            {
+                
+                settings = reader.QuerySettings();
+                settings.Antennas.GetAntenna(1).IsEnabled = true;
+                settings.Antennas.GetAntenna(2).IsEnabled = true;
+                settings.Antennas.GetAntenna(3).IsEnabled = true;
+                settings.Antennas.GetAntenna(4).IsEnabled = true;
+            }
+            catch
+            {
+                reader.ApplyDefaultSettings();
+                settings = reader.QuerySettings();
+            }
+            settings.Report.Mode = ReportMode.BatchAfterStop;
+
+            settings.AutoStart.Mode = AutoStartMode.Periodic;
+            settings.AutoStart.PeriodInMs = 3000;
+            settings.AutoStop.Mode = AutoStopMode.Duration;
+            settings.AutoStop.DurationInMs = 1500;
+            settings.Report.IncludeAntennaPortNumber = true;
+            
+            //settings.Antennas[1].RxSensitivityInDbm=10;
+            reader.ApplySettings(settings);
+
+            reader.TagsReported += OnTagsReported10;
+            //reader.ResumeEventsAndReports();
+            reader.Start();
+            //reader.Stop();
+            // mostrarElementos();
+
+
+        }
+        public void OnTagsReported10(ImpinjReader sender, TagReport report)
+        {
+            // This event handler is called asynchronously 
+            // when tag reports are available.
+            // Loop through each tag in the report 
+            // and print the data.
+            //reader.TagsReported -= OnTagsReported10;
+
+            foreach (Tag tag in report)
+            {
+                ListBox.CheckForIllegalCrossThreadCalls = false;
+                lbSpeedway.Items.Add("Antena: " + tag.AntennaPortNumber + " Tag: " + tag.Epc.ToString());
+                try
+                {
+                    WebRequest req = WebRequest.Create(@"http://52.43.37.169:8080/eventos/rest/r420/leer/" + Regex.Replace(tag.Epc.ToString(), @"\s+", "") + "/" + tbEventoSW.Text);
+                    req.Method = "POST";
+                    req.Timeout = 5000;
+                    HttpWebResponse resp = req.GetResponse() as HttpWebResponse;
+                    req.Abort();
+                }
+                catch
+                {
+                    AutoClosingMessageBox.Show("Tag : " + tag.Epc + " no enviado", "Mensaje", 1000);
+                    // System.Diagnostics.Debug.WriteLine("Tag : " + tag.Epc + " no enviado");
+                }
+            }
+        }
+
+
+
+        private void btnGrabarSpeedway_Click(object sender, EventArgs e)
+        {
+            reader.TagsReported -= OnTagsReported10;
+        }
+        #endregion
+
+        private void sdf(object sender, EventArgs e)
+        {
+
+        }
+
+        private void btnLimpiar2_Click(object sender, EventArgs e)
+        {
+            lbSpeedway.Items.Clear();
+        }
+
+        private void button4_Click(object sender, EventArgs e)
+        {
+            Settings settings;
+            // reader.Start();
+            try
+            {
+                settings = reader.QuerySettings();
+            }
+            catch
+            {
+                reader.ApplyDefaultSettings();
+                settings = reader.QuerySettings();
+            }
+            //settings.Report.Mode = ReportMode.BatchAfterStop;
+            //settings.AutoStart.Mode = AutoStartMode.Periodic;
+            //settings.AutoStart.PeriodInMs = 3000;
+            //settings.AutoStop.Mode = AutoStopMode.Duration;
+            //settings.AutoStop.DurationInMs = 1500;
+            //settings.Report.IncludeAntennaPortNumber = true;
+            //settings.Antennas[1].RxSensitivityInDbm=10;
+            reader.ApplySettings(settings);
+
+            reader.TagsReported += OnTagsReported7;
+            //reader.ResumeEventsAndReports();
+            reader.Start();
+        }
+        #region Grabar EPC Speedway
+
+
+
+        private void button2_Click_2(object sender, EventArgs e)
+        {
+            Settings settings;
+            try
+            {
+                settings = reader.QuerySettings();
+            }
+            catch
+            {
+                reader.ApplyDefaultSettings();
+                settings = reader.QuerySettings();
+            }
+            try
+            {
+                // Assign the TagsReported event handler.
+                // This specifies which method to call
+                // when tags reports are available.
+                reader.TagsReported += OnTagsReported8;
+                // Assign the TagOpComplete event handler.
+                // This specifies which method to call
+                // when tag operations are complete.
+                reader.TagOpComplete += OnTagOpComplete8;
+
+                // Get the default settings
+                // We'll use these as a starting point
+                // and then modify the settings we're 
+                // interested in.
+                settings = reader.QuerySettings();
+
+                // Tell the reader to include the Protocol Control 
+                // bits in all tag reports. We will need to modify 
+                // the PC bits if we change the length of the EPC. 
+                settings.Report.IncludePcBits = true;
+
+                // Enable antenna #1. Disable all others.
+                settings.Antennas.DisableAll();
+                settings.Antennas.GetAntenna(1).IsEnabled = true;
+
+                // Apply the newly modified settings.
+                reader.ApplySettings(settings);
+                reader.Start();
+
+            }
+            catch (Exception eexc)
+            {
+                // Handle Octane SDK errors.
+                MessageBox.Show("Error con la escritura" + eexc);
+            }
+        }
+        public void OnTagsReported8(ImpinjReader sender, TagReport report)
+        {
+            // We've read the tag we want write to, so
+            // we're not interested in tag reports any more.
+            // Unsubscribe from the event.
+            reader.TagsReported -= OnTagsReported8;
+
+            // Change the EPC of the first tag we read to a random value.
+            Tag tag = report.Tags[0];
+            TextBox.CheckForIllegalCrossThreadCalls = false;
+            string nuevoEPC = tbNEPCSpeedway.Text;
+            ProgramEpc(tag.Epc.ToHexString(), tag.PcBits, nuevoEPC);
+            button4.PerformClick();
+
+        }
+        public void OnTagsReported7(ImpinjReader sender, TagReport report)
+        {
+            // We've read the tag we want write to, so
+            // we're not interested in tag reports any more.
+            // Unsubscribe from the event.
+            reader.TagsReported -= OnTagsReported7;
+
+            // Change the EPC of the first tag we read to a random value.
+            Tag tag = report.Tags[0];
+            TextBox.CheckForIllegalCrossThreadCalls = false;
+            //string nuevoEPC = tbNEPCSpeedway.Text;
+            tbEPCSpeedway.Text = tag.Epc.ToHexString();
+            //ProgramEpc(tag.Epc.ToHexString(), tag.PcBits, nuevoEPC);
+            //MessageBox.Show("El nuevo tag es:" + tag.Epc.ToHexString());
+            try
+            {
+                if (cbIncSpeedway.Checked == true)
+                {
+                    tbNEPCSpeedway.Text = (Int64.Parse(tbEPCSpeedway.Text) + Int64.Parse(nuSpeedway.Value.ToString())).ToString().PadLeft(24, '0');
+                }
+                else {
+                    tbNEPCSpeedway.Text = tag.Epc.ToHexString();
+                }
+            }
+            catch
+            {
+
+            }
+        }
+        static void ProgramEpc(string currentEpc, ushort currentPcBits, string newEpc)
+        {
+            try
+            {
+                // Check that the specified EPCs are a valid length
+                if (newEpc.Length % 4 != 0)
+                {
+                    MessageBox.Show("El nuevo EPC debe ser multiplo de 4");
+                    return;
+                }
+
+                // Create a tag operation sequence.
+                // You can add multiple read, write, lock, kill and QT
+                // operations to this sequence.
+                TagOpSequence seq = new TagOpSequence();
+
+                // Specify a target tag based on the EPC.
+                seq.TargetTag.MemoryBank = MemoryBank.Epc;
+                seq.TargetTag.BitPointer = BitPointers.Epc;
+                seq.TargetTag.Data = currentEpc;
+
+                // If you are using Monza 4, Monza 5 or Monza X tag chips,
+                // uncomment these two lines. This enables 32-bit block writes
+                // which significantly improves write performance.
+                //seq.BlockWriteEnabled = true;
+                //seq.BlockWriteWordCount = 2;
+
+                // Create a tag write operation to change the EPC.
+                TagWriteOp writeEpc = new TagWriteOp();
+                // Set an ID so we can tell when this operation has executed.
+                writeEpc.Id = EPC_OP_ID;
+                // Write to EPC memory
+                writeEpc.MemoryBank = MemoryBank.Epc;
+                // Specify the new EPC data
+                writeEpc.Data = TagData.FromHexString(newEpc);
+                // Starting writing at word 2 (word 0 = CRC, word 1 = PC bits)
+                writeEpc.WordPointer = WordPointers.Epc;
+
+                // Add this tag write op to the tag operation sequence.
+                seq.Ops.Add(writeEpc);
+
+                // Is the new EPC a different length than the current EPC?
+                if (currentEpc.Length != newEpc.Length)
+                {
+                    // We need adjust the PC bits and write them back to the 
+                    // tag because the length of the EPC has changed.
+
+                    // Adjust the PC bits (4 hex characters per word).
+                    ushort newEpcLenWords = (ushort)(newEpc.Length / 4);
+                    ushort newPcBits = PcBits.AdjustPcBits(currentPcBits, newEpcLenWords);
+
+                    TagWriteOp writePc = new TagWriteOp();
+                    writePc.Id = PC_BITS_OP_ID;
+                    // The PC bits are in the EPC memory bank.
+                    writePc.MemoryBank = MemoryBank.Epc;
+                    // Specify the data to write (the modified PC bits).
+                    writePc.Data = TagData.FromWord(newPcBits);
+                    // Start writing at the start of the PC bits.
+                    writePc.WordPointer = WordPointers.PcBits;
+
+                    // Add this tag write op to the tag operation sequence.
+                    seq.Ops.Add(writePc);
+                }
+
+                // Add the tag operation sequence to the reader.
+                // The reader supports multiple sequences.
+                reader.AddOpSequence(seq);
+                MessageBox.Show("EPC escrito");
+            }
+            catch
+            {
+                MessageBox.Show("Error al grabar");
+                return;
+            }
+        }
+        static void OnTagOpComplete8(ImpinjReader reader, TagOpReport report)
+        {
+            //// Loop through all the completed tag operations.
+            //foreach (TagOpResult result in report)
+            //{
+            //    // Was this completed operation a tag write operation?
+            //    if (result is TagWriteOpResult)
+            //    {
+            //        // Cast it to the correct type.
+            //        TagWriteOpResult writeResult = result as TagWriteOpResult;
+            //        if (writeResult.OpId == EPC_OP_ID)
+            //            Console.WriteLine("Write to EPC complete : {0}", writeResult.Result);
+            //        else if (writeResult.OpId == PC_BITS_OP_ID)
+            //            Console.WriteLine("Write to PC bits complete : {0}", writeResult.Result);
+
+            //        // Print out the number of words written
+            //        Console.WriteLine("Number of words written : {0}", writeResult.NumWordsWritten);
+            //    }
+            //}
+        }
+
+
+        #endregion
+
+        private void checkBox1_CheckedChanged_1(object sender, EventArgs e)
+        {
+
+        }
+
+        private void nudEPCSpeedway_ValueChanged(object sender, EventArgs e)
+        {
+        }
+
+        private void cbIncSpeedway_CheckedChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                if (cbIncSpeedway.Checked == true)
+                {
+                    tbNEPCSpeedway.Text = (Int64.Parse(tbEPCSpeedway.Text) + Int64.Parse(nuSpeedway.Value.ToString())).ToString().PadLeft(24, '0');
+                    nuSpeedway.Visible = true;
+                }
+                else
+                {
+                    tbNEPCSpeedway.Text = tbEPCSpeedway.Text;
+                    nuSpeedway.Visible = false;
+                }
+            }
+            catch
+            {
+                if (cbIncSpeedway.Checked == true)
+                {
+                    tbNEPCSpeedway.Text = "0";
+                    nuSpeedway.Visible = true;
+                }
+                else
+                {
+                    tbNEPCSpeedway.Text = tbEPCSpeedway.Text;
+                    nuSpeedway.Visible = false;
+                }
+
+            }
+        }
+
+        private void nuSpeedway_ValueChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                Int64 valNEPC = Int64.Parse(tbEPCSpeedway.Text) + Int64.Parse(nuSpeedway.Value.ToString());
+                tbNEPCSpeedway.Text = valNEPC.ToString().PadLeft(24, '0');
+            }
+            catch
+            {
+                MessageBox.Show("Número del EPC en un formato no aceptado");
+            }
+        }
     }
 }
